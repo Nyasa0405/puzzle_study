@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 
-    public enum PuyoType
+    public enum PuyoType//enu‚‚ÍˆÀ‘S«Œüã‚Ì‚½‚ß
     {
 
         Blank=0,
