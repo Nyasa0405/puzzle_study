@@ -31,14 +31,14 @@ public class BoardController : MonoBehaviour
     {
         ClearAll();
 
-        for(int y=0;y<BOARD_HEIGHT;y++)
-        {
-            for(int x=0;x<BOARD_WIDTH;x++)
-            {
-                Settle(new Vector2Int(x, y), Random.Range(1, 7));// –„‚ß‚é
+        //for(int y=0;y<BOARD_HEIGHT;y++)
+        //{
+        //    for(int x=0;x<BOARD_WIDTH;x++)
+        //    {
+        //        Settle(new Vector2Int(x, y), Random.Range(1, 7));// –„‚ß‚é
 
-            }
-        }
+        //    }
+        //}
     }
 
     public static bool IsValidated(Vector2Int pos)
