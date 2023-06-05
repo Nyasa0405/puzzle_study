@@ -5,6 +5,10 @@ using UnityEngine.UIElements;
 
 public class PlayerController : MonoBehaviour
 {
+    const float TRANS_TIME = 0.05f;//移動速度遷移時間
+    const float ROT_TIME = 0.05f;//回転遷移時間
+    //定数として設定します
+    //平行移動と回転の移動速度を変えられるようにしておきました
     enum RotState
     {
         Up=0,
@@ -22,6 +26,10 @@ public class PlayerController : MonoBehaviour
     Vector2Int? position;//軸ぷよの位置
     RotState _rotate = RotState.Up;//角度は 0:上 1:右 2:下 3;左 で持つ（子ぷよの位置）
 
+    AnimationController _animationController=new AnimationController(); //AnimationController の追加
+    Vector2Int _last_position;
+    RotState _last_Rotate = RotState.Up;
+    //遷移前の位置「_last_position」、向き「_last_rot」の保存
 
     Vector2Int _position;//軸ぷよの位置　_positionを導入
 
@@ -51,6 +59,18 @@ public class PlayerController : MonoBehaviour
         return true;
     }
 
+    void SetTransition(Vector2Int pos, RotState rot, float time) //遷移時間のを設定するメソッド「SetTransition」の追加
+    {
+        //補間のため保存しておく
+        _last_position=_position;
+        _last_Rotate=_rotate;//呼ばれる前の位置と向きを保存しておく
+
+        //値の更新
+        _position = pos;
+        _rotate = rot;//位置や向きを更新
+
+        _animationController.Set(time);//AnimationController に時間を指定
+    }
     private bool Translate(bool is_right)
     {
         //仮想的に移動できるか検証する
@@ -58,12 +78,7 @@ public class PlayerController : MonoBehaviour
         if (!CanMove(pos, _rotate)) return false;
 
         //実際に移動
-        _position = pos;
-
-        _puyoControllers[0].SetPos(new Vector3((float)_position.x, (float)_position.y, 0.0f));
-        Vector2Int posChild = CalcChildPuyoPos(_position, _rotate);
-        _puyoControllers[1].SetPos(new Vector3((float)posChild.x, (float)posChild.y, 0.0f));
-        //「Translate」メソッドでの子ゲームオブジェクトの位置の検証の修正
+        SetTransition(pos, _rotate, TRANS_TIME);//平行移動の目的値の設定 
 
         return true;
     }
@@ -102,11 +117,7 @@ public class PlayerController : MonoBehaviour
         if (!CanMove(pos, rot)) return false;
 
         //実際に移動
-        _position = pos;
-        _rotate = rot;
-        _puyoControllers[0].SetPos(new Vector3((float)_position.x, (float)_position.y, 0.0f));
-        Vector2Int posChild = CalcChildPuyoPos(_position, _rotate);
-        _puyoControllers[1].SetPos(new Vector3((float)posChild.x, (float)posChild.y, 0.0f));
+        SetTransition(pos, rot, ROT_TIME);//回転の目的値の設定
 
         return true;
     }
@@ -160,35 +171,76 @@ public class PlayerController : MonoBehaviour
         return true;
     }
 
-    // Update is called once per frame
-    void Update()
+    void Control() //キー入力処理を「Control」メソッドとして抜き出し
     {
         //平行移動のキー入力取得
         if (Input.GetKeyDown(KeyCode.RightArrow))
         {
-            Translate(true);//→ 右の入力判定を毎フレーム調べる。
+            if (Translate(true))return;//→ 右の入力判定を毎フレーム調べる。
         }
         if (Input.GetKeyDown(KeyCode.LeftArrow))
         {
-            Translate(false);//← 左の入力判定を毎フレーム調べる。
+            if(Translate(false))return;//← 左の入力判定を毎フレーム調べる。
         }
 
         //回転のキー入力取得
         if (Input.GetKeyDown(KeyCode.X))//右回転
         {
-            Rotate(true);//「x」で右回転を受付け
+            if(Rotate(true)) return;//「x」で右回転を受付け
         }
         if (Input.GetKeyDown(KeyCode.Z))//左回転
         {
-            Rotate(false);//「z」で左回転を受付け
+            if(Rotate(false)) return;//「z」で左回転を受付け
         }
 
         //クイックドロップのキー入力取得
-        if(Input.GetKey(KeyCode.UpArrow))
+        if (Input.GetKey(KeyCode.UpArrow))
         {
             QuickDrop();//入力としては、↑が押された際に、処理「QuickDrop」を呼び出すようにします
         }
+    }
+
+    // rateが 1 -> 0 で、 pos_last -> pos, rot_last->rotに遷移。　rotがRotState.Invalidなら回転を考慮しない　（軸ぷよ用）
+    static Vector3 Interpolate(Vector2Int pos,RotState rot,Vector2Int pos_last,RotState rot_last,float rate)
+    {
+        //平行移動
+        Vector3 p = Vector3.Lerp( //平行移動は線形補間
+            new Vector3((float)pos.x, (float)pos.y, 0.0f),
+            new Vector3((float)pos_last.x, (float)pos_last.y, 0.0f), rate);
+
+        if (rot == RotState.Invalid) return p;//軸ぷよは線形補間の結果を使ってもらう 
+
+        //回転
+        float theta0 = 0.5f * Mathf.PI * (float)(int)rot;
+        float theta1 = 0.5f * Mathf.PI * (float)(int)rot_last;
+        float theta = theta1 - theta0;
+
+        //近い方向に回る
+        if (+Mathf.PI < theta) theta = theta - 2.0f * Mathf.PI;
+        if (theta < -Mathf.PI) theta = theta + 2.0f * Mathf.PI;//近い方向」は、回転の角度を [-π, π] の範囲に周期的に丸める
+
+        theta = theta0 + rate * theta;//回転は最初の向きから目的の向きに、近い方向で回転する
+        //距離1.0で角度0が上向きになるように平行移動の位置からずらす
 
 
+        return p + new Vector3(Mathf.Sin(theta), Mathf.Cos(theta), 0.0f);
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        //「Update」内でアニメーションを更新
+        if (!_animationController.Update(Time.deltaTime))//アニメ中はキー入力を受け付けない
+        {
+            Control();//アニメーションしていなければ、「Control」メソッドを呼び出す
+        }
+
+        float anim_rate = _animationController.GetNormalized();//正規化時間を用いてぷよを補間しながら表示
+        //正規化時間1で_last_pos, _last_rotの状態になり、正規化時間0で_pos, _rotの状態になる補間関数を導入して、位置を計算して設定
+        _puyoControllers[0].SetPos(Interpolate(_position, RotState.Invalid, _last_position, RotState.Invalid, anim_rate));
+        _puyoControllers[1].SetPos(Interpolate(_position, _rotate, _last_position, _last_Rotate, anim_rate));//軸ぷよはrotの影響を受けないので、RotStateにInvalidを指定することで軸ぷよか判定できるようにする
+
+        //毎フレーム位置を設定
+        //強制的に位置を指定するので、確実ではあるが、オブジェクト指向としてはいまいち
     }
 }
