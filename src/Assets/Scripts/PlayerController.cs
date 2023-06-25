@@ -7,6 +7,12 @@ public class PlayerController : MonoBehaviour
 {
     const int TRANS_TIME = 3;//移動速度遷移時間
     const int ROT_TIME = 3;//回転遷移時間
+
+    // 落下制御
+    const int FALL_COUNT_UNIT = 120; // ひとマス落下するカウント数
+    const int FALL_COUNT_SPD = 10; // 落下速度
+    const int FALL_COUNT_FAST_SPD = 20; // 高速落下時の速度
+    const int GROUND_FRAMES = 50; // 接地移動可能時間
     //定数として設定します
     //平行移動と回転の移動速度を変えられるようにしておきました
     enum RotState
@@ -30,6 +36,10 @@ public class PlayerController : MonoBehaviour
     Vector2Int _last_position;
     RotState _last_Rotate = RotState.Up;
     //遷移前の位置「_last_position」、向き「_last_rot」の保存
+
+    // 落下制御
+    int _fallCount = 0;
+    int _groundFrame = GROUND_FRAMES;// 接地時間
 
     Vector2Int _position;//軸ぷよの位置　_positionを導入
 
@@ -124,36 +134,39 @@ public class PlayerController : MonoBehaviour
         return true;
     }
 
+    void Settle()
+    {
+        // 直接接地
+        bool is_set0 = boardController.Settle(_position,
+            (int)_puyoControllers[0].GetPuyoType());
+        Debug.Assert(is_set0);// 置いたのは空いていた場所のはず
+
+        bool is_set1 = boardController.Settle(CalcChildPuyoPos(_position, _rotate),
+            (int)_puyoControllers[1].GetPuyoType());
+        Debug.Assert(is_set1);// 置いたのは空いていた場所のはず
+
+        gameObject.SetActive(false);
+    }
+
     //QuickDropの処理では、軸ぷよと子ぷよを一段ずつ仮想的に落としていって、設置したところでボードの情報を更新します
 
     //「QuickDrop」メソッドの実装
     void QuickDrop()
     {
-        //堕ちれる一番下まで落ちる
-        Vector2Int pos = _position;//一段ずつ落とせるか確認して、落とせなくなる直前の場所を取得します 
+        // 落ちれる一番下まで落ちる
+        Vector2Int pos = _position;
         do
         {
             pos += Vector2Int.down;
         } while (CanMove(pos, _rotate));
-        pos -= Vector2Int.down;//一つ上の場所（最後に置けた場所)に戻す
+        pos -= Vector2Int.down;// 一つ上の場所（最後に置けた場所）に戻す
 
-        _position = pos; //接地する場所が判明したら、ボードの情報を更新します
+        _position = pos;
 
-        //直接着地
-        bool is_Set0 = boardController.Settle(_position,
-            (int)_puyoControllers[0].GetPuyoType());
-        Debug.Assert(is_Set0);//置いたのは空いていた場所のはず
-
-        bool is_Set1 = boardController.Settle(CalcChildPuyoPos(_position, _rotate),
-            (int)_puyoControllers[1].GetPuyoType());
-        Debug.Assert(is_Set1);//置いたのは空いていた場所のはず
-
-        //念のため、本当に置けたかどうかをアサーションを使ってすぐわかるようにしました 
-        gameObject.SetActive(false);
-        //ボードにぷよを置いたら、（プレイヤーの方で表示しているぷよを消すため）自分のゲームオブジェクトを非アクティブにします 
+        Settle();
     }
 
-   
+
     static readonly KeyCode[] key_code_tbl = new KeyCode[(int)LogicalInput.Key.MAX]{
         KeyCode.RightArrow, // Right
         KeyCode.LeftArrow,  // Left
@@ -186,6 +199,33 @@ public class PlayerController : MonoBehaviour
         //「LogicalInput」に現在のデバイスの値を与えて更新 
     }
 
+    bool Fall(bool is_fast)
+    {
+        _fallCount -= is_fast ? FALL_COUNT_FAST_SPD : FALL_COUNT_SPD;
+
+        // ブロックを飛び越えたら、行けるのかチェック
+        while (_fallCount < 0)// ブロックが飛ぶ可能性がないこともない気がするので複数落下に対応
+        {
+            if (!CanMove(_position + Vector2Int.down, _rotate))
+            {
+                // 落ちれないなら
+                _fallCount = 0; // 動きを止める
+                if (0 < --_groundFrame) return true;// 時間があるなら、移動・回転可能
+
+                // 時間切れになったら本当に固定
+                Settle();
+                return false;
+            }
+
+            // 落ちれるなら下に進む
+            _position += Vector2Int.down;
+            _last_position += Vector2Int.down;
+            _fallCount += FALL_COUNT_UNIT;
+        }
+
+        return true;
+    }
+
     static readonly Vector2Int[] rotate_tbl = new Vector2Int[]
     {
         Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left, 
@@ -208,6 +248,13 @@ public class PlayerController : MonoBehaviour
 
     void Control() //キー入力処理を「Control」メソッドとして抜き出し
     {
+
+        // 落とす
+        if (!Fall(logicalInput.IsRaw(LogicalInput.Key.Down))) return;// 接地したら終了
+
+        // アニメ中はキー入力を受け付けない
+        if (_animationController.Update()) return;
+
         //平行移動のキー入力取得
         if (logicalInput.IsRepeat(LogicalInput.Key.Right))//左右移動はキーリピートで判定
         {
@@ -274,10 +321,11 @@ public class PlayerController : MonoBehaviour
         UpdateInput();
         //「Update」内でアニメーションを更新
         // 操作を受けて動かす
-        if (!_animationController.Update())//アニメ中はキー入力を受け付けない
-        {
-            Control();//アニメーションしていなければ、「Control」メソッドを呼び出す
-        }
+        // 操作を受けて動かす
+        Control();
+
+        // 表示
+        Vector3 dy = Vector3.up * (float)_fallCount / (float)FALL_COUNT_UNIT;
 
         float anim_rate = _animationController.GetNormalized();//正規化時間を用いてぷよを補間しながら表示
         //正規化時間1で_last_pos, _last_rotの状態になり、正規化時間0で_pos, _rotの状態になる補間関数を導入して、位置を計算して設定
