@@ -5,8 +5,8 @@ using UnityEngine.UIElements;
 
 public class PlayerController : MonoBehaviour
 {
-    const float TRANS_TIME = 0.05f;//移動速度遷移時間
-    const float ROT_TIME = 0.05f;//回転遷移時間
+    const int TRANS_TIME = 3;//移動速度遷移時間
+    const int ROT_TIME = 3;//回転遷移時間
     //定数として設定します
     //平行移動と回転の移動速度を変えられるようにしておきました
     enum RotState
@@ -32,6 +32,8 @@ public class PlayerController : MonoBehaviour
     //遷移前の位置「_last_position」、向き「_last_rot」の保存
 
     Vector2Int _position;//軸ぷよの位置　_positionを導入
+
+    LogicalInput logicalInput = new();//「LogicalInput」メンバーの追加
 
     // Start is called before the first frame update
 
@@ -59,7 +61,7 @@ public class PlayerController : MonoBehaviour
         return true;
     }
 
-    void SetTransition(Vector2Int pos, RotState rot, float time) //遷移時間のを設定するメソッド「SetTransition」の追加
+    void SetTransition(Vector2Int pos, RotState rot, int time) //遷移時間のを設定するメソッド「SetTransition」の追加
     {
         //補間のため保存しておく
         _last_position=_position;
@@ -151,6 +153,39 @@ public class PlayerController : MonoBehaviour
         //ボードにぷよを置いたら、（プレイヤーの方で表示しているぷよを消すため）自分のゲームオブジェクトを非アクティブにします 
     }
 
+   
+    static readonly KeyCode[] key_code_tbl = new KeyCode[(int)LogicalInput.Key.MAX]{
+        KeyCode.RightArrow, // Right
+        KeyCode.LeftArrow,  // Left
+        KeyCode.X,          // RotR
+        KeyCode.Z,          // RotL
+        KeyCode.UpArrow,    // QuickDrop
+        KeyCode.DownArrow,  // Down
+
+        //現在のデバイスの値は、該当するボタンのキーをテーブルとして用意しておいて
+        //Updateを呼び出す前にそれぞれのキーが押されているかどうかを調べていきます。
+        //キーコンフィグを導入する場合や、対戦プレイにする場合には、このテーブルを readonly にしないで、書き換えて行きます。
+
+    };
+
+    //入力を取り込む
+
+    void UpdateInput()
+    {
+        LogicalInput.Key inputDev = 0;//デバイス値
+
+        //キー入力取得
+        for (int i = 0; i < (int)LogicalInput.Key.MAX; i++)
+            {
+            if (Input.GetKey(key_code_tbl[i]))
+            {
+                inputDev = (LogicalInput.Key)(1 << i);
+            }
+        }
+        logicalInput.Update(inputDev);
+        //「LogicalInput」に現在のデバイスの値を与えて更新 
+    }
+
     static readonly Vector2Int[] rotate_tbl = new Vector2Int[]
     {
         Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left, 
@@ -174,27 +209,30 @@ public class PlayerController : MonoBehaviour
     void Control() //キー入力処理を「Control」メソッドとして抜き出し
     {
         //平行移動のキー入力取得
-        if (Input.GetKeyDown(KeyCode.RightArrow))
+        if (logicalInput.IsRepeat(LogicalInput.Key.Right))//左右移動はキーリピートで判定
         {
             if (Translate(true))return;//→ 右の入力判定を毎フレーム調べる。
         }
-        if (Input.GetKeyDown(KeyCode.LeftArrow))
+        if (logicalInput.IsRepeat(LogicalInput.Key.Left))
         {
             if(Translate(false))return;//← 左の入力判定を毎フレーム調べる。
         }
 
         //回転のキー入力取得
-        if (Input.GetKeyDown(KeyCode.X))//右回転
+        //回転は押した瞬間で判定
+        if (logicalInput.IsTrigger(LogicalInput.Key.RotR))//右回転
         {
             if(Rotate(true)) return;//「x」で右回転を受付け
         }
-        if (Input.GetKeyDown(KeyCode.Z))//左回転
+        if (logicalInput.IsTrigger(LogicalInput.Key.RotL))//左回転
         {
             if(Rotate(false)) return;//「z」で左回転を受付け
         }
 
-        //クイックドロップのキー入力取得
-        if (Input.GetKey(KeyCode.UpArrow))
+        //クイックドロップは話した瞬間で判定
+        //クイックドロップのキー入力取得 押した瞬間に判定すると「あ、落とす場所がずれていた」という事が起きやすいので、押した後も補正できるように話した瞬間を使用
+
+        if (logicalInput.IsRelease(LogicalInput.Key.QuickDrop))
         {
             QuickDrop();//入力としては、↑が押された際に、処理「QuickDrop」を呼び出すようにします
         }
@@ -227,10 +265,16 @@ public class PlayerController : MonoBehaviour
     }
 
     // Update is called once per frame
-    void Update()
+    //「UpdateInput」メソッドで入力処理をした後、「Control」メソッドで入力に応じた処理を行います。
+    //「Control」メソッドの中では、今までの判定に「GetKeyDown」等を用いていたものを、論理入力に置き換えていきます
+    void FixedUpdate()
     {
+        //「PlayerController」に用意した「UpdateInput」メソッドは、「PlayerController」の更新処理で呼び出します。 今回、固定フレームレートにするので、「Update」ではなく「FixedUpdate」メソッドを用意します。
+        //入力を取り込む
+        UpdateInput();
         //「Update」内でアニメーションを更新
-        if (!_animationController.Update(Time.deltaTime))//アニメ中はキー入力を受け付けない
+        // 操作を受けて動かす
+        if (!_animationController.Update())//アニメ中はキー入力を受け付けない
         {
             Control();//アニメーションしていなければ、「Control」メソッドを呼び出す
         }
