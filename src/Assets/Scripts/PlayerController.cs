@@ -28,38 +28,56 @@ public class PlayerController : MonoBehaviour
 
     [SerializeField] PuyoController[] _puyoControllers = new PuyoController[2] { default!, default! };//ぷよのスクリプトを配列で持つ。　Default!を初期値として設定し設定もれを防ぐ
     [SerializeField] BoardController boardController = default!;//「BoardController」はあらかじめ設定しておくように「[SerializeField]」をつけてメンバー変数として用意しておきます
+    LogicalInput _logicalInput = null;
 
-    Vector2Int? position;//軸ぷよの位置
+    Vector2Int _position = new Vector2Int(2, 12);// 軸ぷよの位置
     RotState _rotate = RotState.Up;//角度は 0:上 1:右 2:下 3;左 で持つ（子ぷよの位置）
 
     AnimationController _animationController=new AnimationController(); //AnimationController の追加
     Vector2Int _last_position;
-    RotState _last_Rotate = RotState.Up;
+    RotState _last_rotate = RotState.Up;
     //遷移前の位置「_last_position」、向き「_last_rot」の保存
 
     // 落下制御
     int _fallCount = 0;
     int _groundFrame = GROUND_FRAMES;// 接地時間
 
-    Vector2Int _position;//軸ぷよの位置　_positionを導入
-
-    LogicalInput logicalInput = new();//「LogicalInput」メンバーの追加
-
     // Start is called before the first frame update
 
     void Start()
     {
-       // Start」メソッドでの子ゲームオブジェクトの位置の設定
-        //ひとまず決め打ちで色を決定
-        _puyoControllers[0].SetPuyoType(PuyoType.Green);
-        _puyoControllers[1].SetPuyoType(PuyoType.Red);
+        gameObject.SetActive(false);// ぷよの種類が設定されるまで眠る
+    }
 
-        _position = new Vector2Int(2, 12);
-        _rotate = RotState.Up;
+    public void SetLogicalInput(LogicalInput reference)
+    {
+        _logicalInput = reference;
+    }
+    public bool Spawn(PuyoType axis, PuyoType child)
+    {
+        // 初期位置に出せるか確認
+        Vector2Int position = new(2, 12);// 初期位置
+        RotState rotate = RotState.Up;// 最初は上向き
+        if (!CanMove(position, rotate)) return false;
+
+        // パラメータの初期化
+        _position = _last_position = position;
+        _rotate = _last_rotate = rotate;
+        _animationController.Set(1);
+        _fallCount = 0;
+        _groundFrame = GROUND_FRAMES;
+
+        // ぷよをだす
+        _puyoControllers[0].SetPuyoType(axis);
+        _puyoControllers[1].SetPuyoType(child);
 
         _puyoControllers[0].SetPos(new Vector3((float)_position.x, (float)_position.y, 0.0f));//ぷよぷよが登場する標準的な場所の位置
         Vector2Int posChild = CalcChildPuyoPos(_position, _rotate);
-        _puyoControllers[1].SetPos(new Vector3((float)posChild.x, (float)posChild.y,0.0f));//表示するゲームオブジェクトの位置を設定
+        _puyoControllers[1].SetPos(new Vector3((float)posChild.x, (float)posChild.y, 0.0f));//表示するゲームオブジェクトの位置を設定
+
+        gameObject.SetActive(true);
+
+        return true;
     }
 
     private bool CanMove(Vector2Int pos, RotState rot)
@@ -75,7 +93,7 @@ public class PlayerController : MonoBehaviour
     {
         //補間のため保存しておく
         _last_position=_position;
-        _last_Rotate=_rotate;//呼ばれる前の位置と向きを保存しておく
+        _last_rotate=_rotate;//呼ばれる前の位置と向きを保存しておく
 
         //値の更新
         _position = pos;
@@ -167,37 +185,8 @@ public class PlayerController : MonoBehaviour
     }
 
 
-    static readonly KeyCode[] key_code_tbl = new KeyCode[(int)LogicalInput.Key.MAX]{
-        KeyCode.RightArrow, // Right
-        KeyCode.LeftArrow,  // Left
-        KeyCode.X,          // RotR
-        KeyCode.Z,          // RotL
-        KeyCode.UpArrow,    // QuickDrop
-        KeyCode.DownArrow,  // Down
 
-        //現在のデバイスの値は、該当するボタンのキーをテーブルとして用意しておいて
-        //Updateを呼び出す前にそれぞれのキーが押されているかどうかを調べていきます。
-        //キーコンフィグを導入する場合や、対戦プレイにする場合には、このテーブルを readonly にしないで、書き換えて行きます。
-
-    };
-
-    //入力を取り込む
-
-    void UpdateInput()
-    {
-        LogicalInput.Key inputDev = 0;//デバイス値
-
-        //キー入力取得
-        for (int i = 0; i < (int)LogicalInput.Key.MAX; i++)
-            {
-            if (Input.GetKey(key_code_tbl[i]))
-            {
-                inputDev = (LogicalInput.Key)(1 << i);
-            }
-        }
-        logicalInput.Update(inputDev);
-        //「LogicalInput」に現在のデバイスの値を与えて更新 
-    }
+  
 
     bool Fall(bool is_fast)
     {
@@ -250,28 +239,28 @@ public class PlayerController : MonoBehaviour
     {
 
         // 落とす
-        if (!Fall(logicalInput.IsRaw(LogicalInput.Key.Down))) return;// 接地したら終了
+        if (!Fall(_logicalInput.IsRaw(LogicalInput.Key.Down))) return;// 接地したら終了
 
         // アニメ中はキー入力を受け付けない
         if (_animationController.Update()) return;
 
         //平行移動のキー入力取得
-        if (logicalInput.IsRepeat(LogicalInput.Key.Right))//左右移動はキーリピートで判定
+        if (_logicalInput.IsRepeat(LogicalInput.Key.Right))//左右移動はキーリピートで判定
         {
             if (Translate(true))return;//→ 右の入力判定を毎フレーム調べる。
         }
-        if (logicalInput.IsRepeat(LogicalInput.Key.Left))
+        if (_logicalInput.IsRepeat(LogicalInput.Key.Left))
         {
             if(Translate(false))return;//← 左の入力判定を毎フレーム調べる。
         }
 
         //回転のキー入力取得
         //回転は押した瞬間で判定
-        if (logicalInput.IsTrigger(LogicalInput.Key.RotR))//右回転
+        if (_logicalInput.IsTrigger(LogicalInput.Key.RotR))//右回転
         {
             if(Rotate(true)) return;//「x」で右回転を受付け
         }
-        if (logicalInput.IsTrigger(LogicalInput.Key.RotL))//左回転
+        if (_logicalInput.IsTrigger(LogicalInput.Key.RotL))//左回転
         {
             if(Rotate(false)) return;//「z」で左回転を受付け
         }
@@ -279,7 +268,7 @@ public class PlayerController : MonoBehaviour
         //クイックドロップは話した瞬間で判定
         //クイックドロップのキー入力取得 押した瞬間に判定すると「あ、落とす場所がずれていた」という事が起きやすいので、押した後も補正できるように話した瞬間を使用
 
-        if (logicalInput.IsRelease(LogicalInput.Key.QuickDrop))
+        if (_logicalInput.IsRelease(LogicalInput.Key.QuickDrop))
         {
             QuickDrop();//入力としては、↑が押された際に、処理「QuickDrop」を呼び出すようにします
         }
@@ -318,7 +307,7 @@ public class PlayerController : MonoBehaviour
     {
         //「PlayerController」に用意した「UpdateInput」メソッドは、「PlayerController」の更新処理で呼び出します。 今回、固定フレームレートにするので、「Update」ではなく「FixedUpdate」メソッドを用意します。
         //入力を取り込む
-        UpdateInput();
+     
         //「Update」内でアニメーションを更新
         // 操作を受けて動かす
         // 操作を受けて動かす
@@ -330,7 +319,7 @@ public class PlayerController : MonoBehaviour
         float anim_rate = _animationController.GetNormalized();//正規化時間を用いてぷよを補間しながら表示
         //正規化時間1で_last_pos, _last_rotの状態になり、正規化時間0で_pos, _rotの状態になる補間関数を導入して、位置を計算して設定
         _puyoControllers[0].SetPos(Interpolate(_position, RotState.Invalid, _last_position, RotState.Invalid, anim_rate));
-        _puyoControllers[1].SetPos(Interpolate(_position, _rotate, _last_position, _last_Rotate, anim_rate));//軸ぷよはrotの影響を受けないので、RotStateにInvalidを指定することで軸ぷよか判定できるようにする
+        _puyoControllers[1].SetPos(Interpolate(_position, _rotate, _last_position, _last_rotate, anim_rate));//軸ぷよはrotの影響を受けないので、RotStateにInvalidを指定することで軸ぷよか判定できるようにする
 
         //毎フレーム位置を設定
         //強制的に位置を指定するので、確実ではあるが、オブジェクト指向としてはいまいち
