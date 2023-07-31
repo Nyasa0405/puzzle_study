@@ -42,6 +42,9 @@ public class PlayerController : MonoBehaviour
     int _fallCount = 0;
     int _groundFrame = GROUND_FRAMES;// 接地時間
 
+    // 得点
+    uint _additiveScore = 0;
+
     // Start is called before the first frame update
 
     void Start()
@@ -186,7 +189,7 @@ public class PlayerController : MonoBehaviour
 
 
 
-  
+
 
     bool Fall(bool is_fast)
     {
@@ -211,6 +214,8 @@ public class PlayerController : MonoBehaviour
             _last_position += Vector2Int.down;
             _fallCount += FALL_COUNT_UNIT;
         }
+
+        if (is_fast) _additiveScore++; // 下に入れて、落ちれるときはボーナス追加
 
         return true;
     }
@@ -303,6 +308,15 @@ public class PlayerController : MonoBehaviour
     // Update is called once per frame
     //「UpdateInput」メソッドで入力処理をした後、「Control」メソッドで入力に応じた処理を行います。
     //「Control」メソッドの中では、今までの判定に「GetKeyDown」等を用いていたものを、論理入力に置き換えていきます
+
+    // 得点の受け渡し
+    public uint popScore()
+    {
+        uint score = _additiveScore;
+        _additiveScore = 0;
+
+        return score;
+    }
     void FixedUpdate()
     {
         //「PlayerController」に用意した「UpdateInput」メソッドは、「PlayerController」の更新処理で呼び出します。 今回、固定フレームレートにするので、「Update」ではなく「FixedUpdate」メソッドを用意します。
